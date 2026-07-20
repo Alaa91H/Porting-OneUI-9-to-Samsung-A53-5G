@@ -113,7 +113,7 @@ TARGET_FIRMWARE="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type f \
 TARGET_FIRMWARE="${TARGET_FIRMWARE:-}"
 
 if [[ -z "$SOURCE_FIRMWARE" || -z "$TARGET_FIRMWARE" ]]; then
-  err "Could not locate both firmware packages."
+  log_error "Could not locate both firmware packages."
   cat <<HINT
 
   Missing:
