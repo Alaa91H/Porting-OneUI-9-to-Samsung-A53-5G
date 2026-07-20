@@ -16,10 +16,10 @@ source "$(dirname "$0")/lib/common.sh"
 
 log_step "Resolve & download firmware packages"
 ensure_dirs
-# Load device configs (tolerate missing files — use defaults)
+# Load device configs with SEPARATE prefixes so they don't overwrite each other
 err_off
-load_source_env || true
-load_target_env || true
+load_env "$CONFIG_DIR/source.env" SRC_ || true
+load_env "$CONFIG_DIR/target.env" TGT_ || true
 err_on
 
 FETCHER="$PROJECT_ROOT/scripts/firmware/samfw_fetcher.py"
@@ -38,37 +38,28 @@ run_fetcher() {
               --github-repo "$GITHUB_REPO")
   [[ -n "$pda" ]] && args+=(--pda "$pda")
   log_info "[$label] Resolving firmware for $model / $region ${pda:+(PDA $pda)}"
+  err_off
   if python3 "$FETCHER" "${args[@]}"; then
+    err_on
     log_ok "[$label] firmware downloaded"
     return 0
   fi
+  err_on
   log_warn "[$label] automatic resolution failed"
   return 1
 }
 
 # ----------------------------------------------------------------
-# Override handling: if a direct URL is provided (env or secret),
-# pass it through to the fetcher so it skips samfw entirely.
+# Device identification (from prefixed config vars with sensible defaults)
 # ----------------------------------------------------------------
-# Source (S26 Ultra) — default region XEU (Europe, unbranded)
-SRC_MODEL="${DEVICE_MODEL:-SM-S948B}"
-# DEVICE_MODEL in source.env is SM-S948B; fall back if unset
-[[ "$SRC_MODEL" == "SM-S948B" ]] || SRC_MODEL="SM-S948B"
-SRC_REGION="${DEVICE_MODEL_REGION:-XEU}"
+# Source (S26 Ultra)
+SRC_MODEL="${SRC_DEVICE_MODEL:-SM-S948B}"
+SRC_REGION="${SRC_DEVICE_MODEL_REGION:-XEU}"
 SRC_PDA="${SOURCE_PDA:-}"
 
-# Target (A53 5G) — default region EUX
-TGT_MODEL="${DEVICE_MODEL:-SM-A536B}"
-[[ "$TGT_MODEL" == "SM-A536B" ]] || TGT_MODEL="SM-A536B"
-# target.env may override DEVICE_MODEL; reload explicitly for safety
-if [[ -n "${TARGET_DEVICE_MODEL:-}" ]]; then TGT_MODEL="$TARGET_DEVICE_MODEL"; fi
-TGT_REGION="${DEVICE_MODEL_REGION:-EUX}"
-# target.env sets DEVICE_MODEL_REGION; ensure we read the target one
-err_off
-load_env "$CONFIG_DIR/target.env" TARGET_ || true
-err_on
-TGT_MODEL="${TARGET_DEVICE_MODEL:-$TGT_MODEL}"
-TGT_REGION="${TARGET_DEVICE_MODEL_REGION:-$TGT_REGION}"
+# Target (A53 5G)
+TGT_MODEL="${TGT_DEVICE_MODEL:-SM-A536B}"
+TGT_REGION="${TGT_DEVICE_MODEL_REGION:-EUX}"
 TGT_PDA="${TARGET_PDA:-}"
 
 log_info "Source device: $SRC_MODEL / $SRC_REGION"
@@ -113,13 +104,12 @@ fi
 # 3. Locate the downloaded files and verify
 # ----------------------------------------------------------------
 log_step "Locating downloaded packages"
+# Only match .tar.md5 files (exclude .json sidecars and other files)
 SOURCE_FIRMWARE="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type f \
-  \( -iname "*S948B*.tar.md5" -o -iname "source_*.tar.md5" -o -iname "*SM-S948B*" \) \
-  -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | awk '{print $2}')"
+  -iname "*S948B*.tar.md5" -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | awk '{print $2}')"
 SOURCE_FIRMWARE="${SOURCE_FIRMWARE:-}"
 TARGET_FIRMWARE="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type f \
-  \( -iname "*A536B*.tar.md5" -o -iname "target_*.tar.md5" -o -iname "*SM-A536B*" \) \
-  -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | awk '{print $2}')"
+  -iname "*A536B*.tar.md5" -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | awk '{print $2}')"
 TARGET_FIRMWARE="${TARGET_FIRMWARE:-}"
 
 if [[ -z "$SOURCE_FIRMWARE" || -z "$TARGET_FIRMWARE" ]]; then
@@ -158,7 +148,7 @@ verify_samsung_md5() {
     # Recompute MD5 of the whole file and compare
     local actual; actual="$(md5sum "$f" | awk '{print $1}')"
     if [[ "${actual,,}" == "${trailer,,}" ]]; then
-      ok "$name: MD5 OK ($trailer)"
+      log_ok "$name: MD5 OK ($trailer)"
     else
       log_warn "$name: MD5 mismatch (trailer=$trailer actual=$actual) — file may be corrupt"
     fi
@@ -180,5 +170,5 @@ SOURCE_REGION="$SRC_REGION"
 TARGET_MODEL="$TGT_MODEL"
 TARGET_REGION="$TGT_REGION"
 EOF
-ok "Paths persisted to $WORK_DIR/firmware_paths.env"
+log_ok "Paths persisted to $WORK_DIR/firmware_paths.env"
 log_step "Next: bash scripts/02_extract_firmware.sh"
