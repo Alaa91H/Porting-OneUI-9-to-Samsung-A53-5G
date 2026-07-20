@@ -1,0 +1,48 @@
+{
+  "_comment": "تعريفات الأجهزة والأقسام. عدّل الأسماء/الأحجام حسب الفيرموير الفعلية.",
+  "source": {
+    "device": "s26x",
+    "model": "SM-S948B",
+    "marketing_name": "Galaxy S26 Ultra",
+    "soc": "Snapdragon 8 Elite Gen5",
+    "android_base": "16",
+    "oneui": "9.0",
+    "vab": true,
+    "dynamic_partitions": true,
+    "erofs": true,
+    "partitions_in_super": ["system", "vendor", "product", "odm", "system_ext", "vendor_dlkm"],
+    "group": "qti_dynamic_partitions",
+    "super_size_bytes": 11811160064,
+    "block_size": 4096,
+    "slot_suffix": "_a"
+  },
+  "target": {
+    "device": "a53x",
+    "model": "SM-A536B",
+    "marketing_name": "Galaxy A53 5G",
+    "soc": "Exynos 1280",
+    "android_base": "14",
+    "android_after_port": "16",
+    "oneui": "9.0",
+    "vab": true,
+    "dynamic_partitions": true,
+    "erofs": true,
+    "partitions_in_super": ["system", "vendor", "product", "odm", "system_ext"],
+    "group": "dynamic_partitions_a",
+    "super_size_bytes": 9126805504,
+    "block_size": 4096,
+    "slot_suffix": "_a",
+    "keep_from_target": ["boot", "init_boot", "vendor_boot", "dtbo", "modem", "vendor", "odm"],
+    "port_from_source": ["system", "product", "system_ext"]
+  },
+  "image_formats": {
+    "ext4": { "mount": "mount -t ext4", "repack": "mkfs.ext4 -L" },
+    "erofs": { "mount": "erofs-fuse", "repack": "mkfs.erofs", "extract": "dump.erofs" }
+  },
+  "tool_versions": {
+    "android_sdk_tools": "r34",
+    "erofs_utils": "1.7.1",
+    "simg2img": "from android-tools-fsutils",
+    "lpmake": "from liblp (AOSP build)"
+  }
+}

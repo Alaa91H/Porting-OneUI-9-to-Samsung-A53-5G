@@ -1,0 +1,175 @@
+name: Build One UI 9 Port
+
+on:
+  workflow_dispatch:
+    inputs:
+      debloat_level:
+        description: 'Debloat level'
+        required: true
+        type: choice
+        default: 'standard'
+        options:
+          - lite
+          - standard
+          - aggressive
+      keep_gapps:
+        description: 'Keep Google services'
+        required: false
+        type: boolean
+        default: true
+      source_pda:
+        description: 'Specific source PDA (optional)'
+        required: false
+        type: string
+        default: ''
+      target_pda:
+        description: 'Specific target PDA (optional)'
+        required: false
+        type: string
+        default: ''
+      skip_download:
+        description: 'Skip download (use cache)'
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches: [main, master]
+    paths:
+      - 'scripts/**'
+      - 'config/**'
+      - 'debloat/**'
+      - 'patches/**'
+      - '.github/workflows/build-port.yml'
+
+env:
+  DEBLOAT_LEVEL: ${{ github.event.inputs.debloat_level || 'standard' }}
+  KEEP_GAPPS: ${{ github.event.inputs.keep_gapps && 'true' || 'true' }}
+  SOURCE_PDA: ${{ github.event.inputs.source_pda }}
+  TARGET_PDA: ${{ github.event.inputs.target_pda }}
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          echo "=== Disk space before cleanup ==="
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup 2>/dev/null || true
+          sudo apt-get clean
+          docker system prune -af 2>/dev/null || true
+          echo "=== Disk space after cleanup ==="
+          df -h /
+
+      - name: Set timezone
+        run: sudo timedatectl set-timezone Africa/Cairo 2>/dev/null || true
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/*.sh scripts/lib/*.sh scripts/firmware/*.py 2>/dev/null || true
+
+      - name: Install toolchain (00_setup.sh)
+        run: bash scripts/00_setup.sh
+
+      - name: Restore firmware cache
+        if: ${{ github.event.inputs.skip_download == 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            downloads/
+            work/
+          key: firmware-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            firmware-${{ runner.os }}-
+
+      - name: Download firmware (01)
+        env:
+          SOURCE_FIRMWARE_URL: ${{ secrets.SOURCE_FIRMWARE_URL }}
+          TARGET_FIRMWARE_URL: ${{ secrets.TARGET_FIRMWARE_URL }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash scripts/01_download_firmware.sh
+
+      - name: Save firmware cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            downloads/
+          key: firmware-${{ runner.os }}-${{ github.sha }}
+
+      - name: Extract firmware (02)
+        run: sudo -E bash scripts/02_extract_firmware.sh
+
+      - name: Port framework (03)
+        run: sudo -E bash scripts/03_port_framework.sh
+
+      - name: Debloat (04)
+        run: sudo -E bash scripts/04_debloat.sh "${{ env.DEBLOAT_LEVEL }}"
+
+      - name: Patch target (05)
+        run: sudo -E bash scripts/05_patch_target.sh
+
+      - name: Repack images (06)
+        run: sudo -E bash scripts/06_repack.sh
+
+      - name: Build flashable packages (07)
+        run: sudo -E bash scripts/07_build_flashable.sh
+
+      - name: Upload build artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: OneUI9_A53x_Port_${{ github.run_number }}
+          path: |
+            output/*.tar.md5
+            output/*.zip
+            work/port_status.env
+            work/*_fetch.json
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: port-v${{ github.run_number }}
+          name: One UI 9 Port Build #${{ github.run_number }}
+          body: |
+            ## One UI 9 Port — S26 Ultra → A53 5G
+
+            | Setting | Value |
+            |---|---|
+            | Debloat level | `${{ env.DEBLOAT_LEVEL }}` |
+            | Keep GApps | `${{ github.event.inputs.keep_gapps }}` |
+            | Source PDA | `${{ github.event.inputs.source_pda || 'latest' }}` |
+            | Target PDA | `${{ github.event.inputs.target_pda || 'latest' }}` |
+            | Build run | `${{ github.run_id }}` |
+
+            ### Flashing
+
+            1. Enable **OEM Unlock** in Developer Options and unlock the bootloader.
+            2. *(If modem/vendor are not bundled)* flash the matching target
+               `CP` and `vendor`/`system` from the original A53 firmware first.
+            3. Flash the `.zip` via TWRP / OrangeFox / stock recovery, **or** the
+               `.tar.md5` via Odin (AP slot).
+            4. Wipe data / cache / dalvik after flashing.
+
+            > ⚠️ Use at your own risk. May void warranty / trip Knox.
+          files: |
+            output/*.tar.md5
+            output/*.zip
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup intermediate files
+        if: always()
+        run: |
+          sudo rm -rf work/ downloads/ 2>/dev/null || true

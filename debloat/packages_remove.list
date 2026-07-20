@@ -1,0 +1,120 @@
+# ============================================================
+# packages_remove.list — حزم التضخيم المرشّحة للحذف
+# الصيغة: <package_name> [level] # تعليق
+# المستويات: lite, standard, aggressive
+# السطور التي تبدأ بـ # تعليقات وتُتجاهل.
+# ============================================================
+
+# ---------- مستوى lite: تطبيقات تسويقية وإقليمية ----------
+# شبكات اجتماعية مثبّتة مسبقاً (bloatware مدفوع من شركات)
+com.facebook.katana                  lite    # Facebook
+com.facebook.system                  lite    # Facebook system app
+com.facebook.appmanager              lite    # Facebook manager
+com.facebook.services                lite    # Facebook services
+com.instagram.android                lite    # Instagram
+com.snapchat.android                 lite    # Snapchat
+com.netflix.mediaclient              lite    # Netflix
+com.spotify.music                    lite    # Spotify
+com.microsoft.office.excel           lite    # MS Excel
+com.microsoft.office.word            lite    # MS Word
+com.microsoft.office.powerpoint      lite    # MS PowerPoint
+com.microsoft.skydrive               lite    # OneDrive
+com.linkedin.android                 lite    # LinkedIn
+com.booking                          lite    # Booking.com
+com.ebay.mobile                      lite    # eBay
+com.amazon.mShop.android.shopping    lite    # Amazon Shopping
+com.tencent.mm                       lite    # WeChat (إقليمي)
+com.vkontakte.android                lite    # VK
+com.zhiliaoapp.musically             lite    # TikTok
+ss.android.ugc.aweme                 lite    # TikTok (alt)
+com.shopee.id                        lite    # Shopee
+
+# ---------- مستوى standard: خدمات سامسونج الزائدة ----------
+com.samsung.android.bixby.service              standard   # Bixby voice assistant
+com.samsung.android.bixby.agent                 standard   # Bixby agent
+com.samsung.android.bixbyvision.framework      standard   # Bixby Vision
+com.samsung.android.bixby.wakeup                standard   # Bixby wakeup
+com.samsung.android.app.spage                  standard   # Samsung Free / Bixby Home
+com.samsung.android.samsungpositioning          standard   # positioning svc
+com.samsung.android.app.routines                standard   # Bixby Routines
+com.samsung.android.aremoji                     standard   # AR Emoji
+com.samsung.android.aremoji.edgelight            standard   # AR Emoji edge
+com.samsung.android.arzone                      standard   # AR Zone
+com.samsung.android.ardrawing                    standard   # AR Doodle
+com.samsung.android.livestickers                 standard   # live stickers
+com.samsung.android.app.camera.sticker.facearavatarPreload   standard
+com.samsung.android.service.aircommand           standard   # Air Command
+com.samsung.android.aircommandmanager             standard
+com.samsung.android.app.tfree                     standard   # T-Free
+com.samsung.android.app.sbrowser                  standard   # Samsung Internet
+com.samsung.android.app.sbrowseredge             standard
+com.sec.android.app.samsungapps                  standard   # Galaxy Store
+com.samsung.android.app.omcagent                  standard   # OMC agent
+com.samsung.android.kgclient                      standard
+com.samsung.android.mateagent                     standard   # Mate agent
+com.samsung.android.scloud                        standard   # Samsung Cloud
+com.samsung.android.samsungpass                  standard   # Samsung Pass
+com.samsung.android.samsungpassautofill          standard
+com.samsung.android.themecenter                   standard   # Themes
+com.samsung.android.themestore                    standard
+com.samsung.android.app.cocktailbar              standard   # Edge panels
+com.sec.android.desktopmode.amservice             standard
+com.samsung.android.game.gametools                standard   # Game tools
+com.samsung.android.game.gamehome                 standard   # Game launcher
+com.samsung.android.gametuner                     standard
+com.samsung.android.voc                          standard   # Voice of customer
+com.samsung.android.mobileservice                 standard
+com.samsung.oda.service                          standard
+
+# ---------- مستوى aggressive: تطبيقات Google غير أساسية + سامسونج ----------
+com.google.android.apps.youtube.music            aggressive  # YT Music
+com.google.android.apps.maps                      aggressive  # Maps
+com.google.android.apps.photos                   aggressive  # Photos (احتفظ بدال One UI)
+com.google.android.apps.docs                      aggressive  # Docs
+com.google.android.apps.tachyon                   aggressive  # Duo/Meet
+com.google.android.videos                         aggressive  # Play Movies
+com.google.android.marvin.talkback                aggressive  # Talkback (إلا إذا تحتاجه)
+com.google.android.feedback                       aggressive  # Feedback
+com.google.android.printservice.recommendation    aggressive
+com.google.android.partnersetup                   aggressive
+com.google.android.onetimeinitializer            aggressive
+com.google.android.configupdater                 aggressive
+com.google.android.syncadapters.contacts         aggressive
+com.google.android.backuptransport               aggressive
+com.google.android.setupwizard.devmode            aggressive
+com.android.bookmarkprovider                      aggressive
+com.android.dreams.basic                          aggressive  # Screensavers
+com.android.egg                                    aggressive  # Easter egg
+com.android.cellbroadcastreceiver                  aggressive  # (احذر: تنبيهات طوارئ)
+com.samsung.android.app.dofviewer                  aggressive
+com.samsung.android.app.aodservice                 aggressive  # Always-On Display
+com.samsung.android.app.notes                       aggressive
+com.samsung.android.app.reminder                    aggressive
+com.samsung.android.app.worldclock                  aggressive
+com.samsung.android.app.memo                       aggressive
+com.samsung.android.drivelink.stub                 aggressive  # Car mode
+com.samsung.android.galaxyfinder                   aggressive  # Finder
+com.samsung.android.app.tips                        aggressive
+com.samsung.android.wellbeing                       aggressive  # Digital Wellbeing
+com.samsung.android.sm.devicesecurity              aggressive
+com.samsung.android.knox.kes.analytics             aggressive
+com.samsung.android.knox.analytics.db              aggressive
+com.sec.knox.foldercontainer                        aggressive  # Secure Folder
+com.samsung.android.knox.knoxtrustagent             aggressive
+com.samsung.android.knox.knoxshortcut              aggressive
+com.samsung.android.klmsagent                      aggressive
+com.samsung.android.mdm                            aggressive
+com.samsung.android.smartmirroring                  aggressive  # Smart View
+com.samsung.android.app.migration                  aggressive  # Smart Switch
+com.samsung.android.fmm                            aggressive  # Find My Mobile
+com.samsung.android.lool                           aggressive  # Device care
+com.samsung.android.weather                         aggressive
+com.samsung.android.oneconnect                     aggressive  # SmartThings
+com.samsung.android.ststub                         aggressive
+com.samsung.android.beaconmanager                   aggressive
+com.sec.android.app.vepreload                       aggressive  # Video editor
+com.sec.android.app.voicenote                      aggressive
+com.sec.android.app.clockpackage                    aggressive
+com.sec.android.app.fmradio                         aggressive
+com.sec.android.app.dexonpc                         aggressive
+com.sec.android.app.quicktool                       aggressive

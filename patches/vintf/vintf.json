@@ -1,0 +1,21 @@
+{
+  "_comment": "إعلانات توافق vendor interface — تُدمج في vendor/compatibility_matrix.xml",
+  "min_vendor_api_level": 14,
+  "target_vendor_api_level": 14,
+  "oneui_target": 9,
+  "matrix": {
+    "system": {
+      "min_supported": 14,
+      "current": 16
+    },
+    "vendor": {
+      "version": "14",
+      "keep_target_hals": true
+    }
+  },
+  "kernels": {
+    "_comment": "نواة A53 (Exynos 1280) تبقى كما هي؛ فقط modules.vendor_dlkm يُجمّع من الهدف",
+    "source": "target_kernel",
+    "min_kernel_version": "5.15"
+  }
+}

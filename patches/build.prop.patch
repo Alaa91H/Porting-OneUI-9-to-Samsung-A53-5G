@@ -1,0 +1,74 @@
+# ============================================================
+# patches/build.prop.patch — تعديلات خصائص البناء للهدف A53 5G
+# تُطبّق على system/build.prop و system/system/build.prop و vendor/build.prop
+# ============================================================
+
+# --- 1. بصمة الجهاز (تشير إلى One UI 9 / Android 16 لكن على جهاز A53) ---
+ro.build.version.release=16
+ro.build.version.sdk=36
+ro.build.version.oneui=9.0
+ro.build.version.incremental=OneUI9Port_$(date +%Y%m%d)
+
+# بصمة كاملة (لتمرير فحوصات Play Integrity الأساسية — لن تمرّ KEYBOX)
+ro.build.fingerprint=samsung/a53xxx/a53x:16/UP1A.231005.007/A536BXXU9XHP1:user/release-keys
+ro.bootimage.build.fingerprint=samsung/a53xxx/a53x:16/UP1A.231005.007/A536BXXU9XHP1:user/release-keys
+ro.system.build.fingerprint=samsung/a53xxx/a53x:16/UP1A.231005.007/A536BXXU9XHP1:user/release-keys
+ro.vendor.build.fingerprint=samsung/a53xxx/a53x:14/UP1A.231005.007/A536BXXU9XHP1:user/release-keys
+
+# --- 2. هوية الجهاز (المحافظة على A53 لكي يطابق الـ vendor) ---
+ro.product.device=a53x
+ro.product.name=a53xxx
+ro.product.model=SM-A536B
+ro.product.brand=samsung
+ro.product.manufacturer=samsung
+ro.product.board=exynos1280
+ro.board.platform=exynos1280
+
+# نسخ للسياقات الأخرى
+ro.product.system.device=a53x
+ro.product.system.name=a53xxx
+ro.product.vendor.device=a53x
+ro.product.vendor.name=a53xxx
+ro.product.odm.device=a53x
+ro.product.product.device=a53x
+ro.product.product.name=a53xxx
+ro.product.system_ext.device=a53x
+
+# --- 3. تعطيل dm-verity والتحقق القسري للتشفير (يُطبّق أيضاً على boot) ---
+ro.boot.veritymode=disabled
+ro.boot.vbmeta.device=disabled
+ro.boot.vbmeta.hash_alg=disabled
+ro.boot.vbmeta.size=0
+veritymode=disabled
+ro.boot.verifiedbootstate=orange
+force_encrypt=off
+ro.crypto.state=unsupported
+
+# --- 4. تعديلات أداء / استقرار One UI 9 على A53 ---
+# إيقاف بعض التأثيرات الثقيلة لكسب أداء على Exynos 1280
+ro.surface_flinger.vsync_event_phase_offset_ns=0
+ro.surface_flinger.vsync_sf_event_phase_offset_ns=0
+debug.hwui.renderer=skiagl
+ro.hwui.use_buffer_age=false
+ro.config.max_starting_bg=8
+ro.config.low_ram=true
+sys.use_fifo_ui=1
+
+# --- 5. إزالة بصمة S26 من خصائص المنطقة ---
+ro.csc.countryiso=GB
+ro.csc.sales_code=XEU
+ro.boot.csc=XEU
+ro.product.locale=en-US
+
+# --- 6. خدمات One UI 9 (تفعيل الميزات المدعومة على A53) ---
+ro.product.vendor_dlkm_modules.blocklist=
+ro.samsung.feature.gms_compatibility=8.0
+ro.samsung.android.oneui.version=9.0
+ro.setupwizard.mode=OPTIONAL
+ro.com.google.gmsversion=16
+
+# --- 7. سلامة البناء (لتقليل نبضات Samsung Knox) ---
+ro.boot.flash.locked=0
+ro.boot.warranty_bit=1
+ro.warranty_bit=1
+ro.boot.em.did=OneUI9Port

@@ -1,0 +1,36 @@
+# ملفات العمل المؤقتة والنواتج الكبيرة
+work/
+downloads/
+output/
+*.img
+*.tar
+*.tar.md5
+*.tar.xz
+*.lz4
+*.zip
+!patches/**/*.zip
+
+# إلا النواتج الصغيرة المهمة
+!work/port_status.env
+
+# أدوات مبنية محلياً
+aosp-tools/
+magiskboot/
+mkbootimg/
+
+# ملفات النظام
+.DS_Store
+Thumbs.db
+
+# محرّرات
+.vscode/
+.idea/
+*.swp
+*~
+
+# أسرار
+.env
+secrets/
+*.key
+*.pem
+*.keystore
