@@ -559,24 +559,42 @@ def fetch_via_samloader(model: str, region: str, out: Path) -> Optional[FetchRes
 
     # Check if samloader is installed
     if not shutil.which("samloader"):
-        info("Installing samloader for direct Samsung FUS access")
-        try:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--quiet",
-                 "--break-system-packages", "samloader"],
-                check=True, timeout=120,
-            )
-        except subprocess.CalledProcessError:
+        info("Installing samloader from GitHub (direct Samsung FUS access)")
+        # Try PyPI first, then GitHub source
+        install_cmds = [
+            [sys.executable, "-m", "pip", "install", "--quiet",
+             "--break-system-packages", "samloader"],
+            [sys.executable, "-m", "pip", "install", "--quiet", "samloader"],
+            [sys.executable, "-m", "pip", "install", "--quiet",
+             "--break-system-packages",
+             "git+https://github.com/nlsam/samloader.git"],
+            [sys.executable, "-m", "pip", "install", "--quiet",
+             "git+https://github.com/nlsam/samloader.git"],
+        ]
+        installed = False
+        for cmd in install_cmds:
             try:
-                subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "--quiet", "samloader"],
-                    check=True, timeout=120,
-                )
-            except Exception:
-                warn("Could not install samloader")
-                return None
-        except subprocess.TimeoutExpired:
-            warn("samloader installation timed out")
+                subprocess.run(cmd, check=True, timeout=120,
+                               capture_output=True, text=True)
+                installed = True
+                break
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                continue
+        if not installed:
+            # Try samfirm-manifest as alternative
+            for pkg in ["samfirm-manifest", "samloader-manifest"]:
+                try:
+                    subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "--quiet",
+                         "--break-system-packages", pkg],
+                        check=True, timeout=120, capture_output=True, text=True,
+                    )
+                    installed = True
+                    break
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                    continue
+        if not installed:
+            warn("Could not install samloader or alternatives")
             return None
 
     # Run samloader to download the firmware
