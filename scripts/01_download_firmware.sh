@@ -16,8 +16,11 @@ source "$(dirname "$0")/lib/common.sh"
 
 log_step "Resolve & download firmware packages"
 ensure_dirs
-load_source_env 2>/dev/null || true
-load_target_env 2>/dev/null || true
+# Load device configs (tolerate missing files — use defaults)
+err_off
+load_source_env || true
+load_target_env || true
+err_on
 
 FETCHER="$SCRIPT_DIR/firmware/samfw_fetcher.py"
 [[ -f "$FETCHER" ]] || die "Firmware fetcher not found: $FETCHER"
@@ -61,7 +64,9 @@ TGT_MODEL="${DEVICE_MODEL:-SM-A536B}"
 if [[ -n "${TARGET_DEVICE_MODEL:-}" ]]; then TGT_MODEL="$TARGET_DEVICE_MODEL"; fi
 TGT_REGION="${DEVICE_MODEL_REGION:-EUX}"
 # target.env sets DEVICE_MODEL_REGION; ensure we read the target one
-load_env "$CONFIG_DIR/target.env" TARGET_ 2>/dev/null || true
+err_off
+load_env "$CONFIG_DIR/target.env" TARGET_ || true
+err_on
 TGT_MODEL="${TARGET_DEVICE_MODEL:-$TGT_MODEL}"
 TGT_REGION="${TARGET_DEVICE_MODEL_REGION:-$TGT_REGION}"
 TGT_PDA="${TARGET_PDA:-}"

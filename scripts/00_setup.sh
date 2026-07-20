@@ -65,11 +65,25 @@ install_lp_tools() {
   mkdir -p "$build_dir"
 
   # 2a. Resolve the latest prebuilt binary URL via GitHub API
-  log_info "Resolving lpunpack/lpmake/lpdump prebuilt release"
-  local api_url="https://api.github.com/repos/LonelyFool/lpunpack_and_lpmake_and_lpdump/releases/latest"
-  local dl_urls
-  dl_urls=$(curl -fsSL -H "Accept: application/vnd.github+json" "$api_url" \
-            | jq -r '.assets[].browser_download_url' 2>/dev/null || true)
+  # Try multiple repos that host lpunpack/lpmake/lpdump prebuilts
+  local repos=(
+    "LonelyFool/lpunpack_and_lpmake_and_lpdump"
+    "unix3dgforce/lptools"
+    "erfanoabdi/lptools"
+  )
+  local dl_urls=""
+  for repo in "${repos[@]}"; do
+    local api_url="https://api.github.com/repos/${repo}/releases/latest"
+    log_info "Trying release: $repo"
+    err_off
+    dl_urls=$(curl -fsSL -H "Accept: application/vnd.github+json" "$api_url" \
+              | jq -r '.assets[].browser_download_url' 2>/dev/null || true)
+    err_on
+    if [[ -n "$dl_urls" ]]; then
+      log_info "Found assets in $repo"
+      break
+    fi
+  done
 
   if [[ -n "$dl_urls" ]]; then
     # Pick the first asset (typically a .tar.xz or .zip)
@@ -101,15 +115,17 @@ install_lp_tools() {
       log_warn "Prebuilt download failed"
     fi
   else
-    log_warn "Could not resolve LonelyFool release assets via API"
+    log_warn "Could not resolve lp tools from any GitHub release"
   fi
 
   # 2b. Fallback: pip-install lpunpack (pure-Python implementation)
   if ! command -v lpunpack >/dev/null 2>&1; then
     log_info "Installing lpunpack via pip (pure Python)"
+    err_off
     pip3 install --quiet lpunpack 2>/dev/null \
       || pip3 install --quiet --break-system-packages lpunpack 2>/dev/null \
       || log_warn "pip install lpunpack failed"
+    err_on
   fi
 
   # 2c. Final report
@@ -133,11 +149,13 @@ install_boot_tools() {
   if ! command -v mkbootimg >/dev/null 2>&1; then
     log_info "Installing mkbootimg from AOSP"
     local d="$WORK_DIR/mkbootimg"
+    err_off
     if git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg "$d" 2>/dev/null; then
       [[ -f "$d/mkbootimg.py" ]] && sudo install -m755 "$d/mkbootimg.py" "$dest/mkbootimg" 2>/dev/null
     else
       log_warn "git clone mkbootimg failed"
     fi
+    err_on
   fi
 
   # 3b. magiskboot — extract libmagiskboot.so from latest Magisk APK
@@ -147,12 +165,13 @@ install_boot_tools() {
     mkdir -p "$d"
 
     # Resolve the actual APK download URL via GitHub API (asset name varies)
+    err_off
     local apk_url=""
     apk_url=$(curl -fsSL -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/topjohnwu/Magisk/releases/latest" \
               | jq -r '.assets[] | select(.name|test("\\.apk$")) | .browser_download_url' 2>/dev/null | head -1 || true)
 
-    if [[ -n "$apk_url" ]] && curl -fsSL "$apk_url" -o "$d/Magisk.apk"; then
+    if [[ -n "$apk_url" ]] && curl -fsSL "$apk_url" -o "$d/Magisk.apk" 2>/dev/null; then
       log_info "Extracting libmagiskboot.so from APK"
       if python3 - "$d/Magisk.apk" "$d" <<'PY'
 import zipfile, os, sys
@@ -185,6 +204,7 @@ PY
     else
       log_warn "Could not download Magisk APK (URL: ${apk_url:-<none>})"
     fi
+    err_on
   fi
 }
 install_boot_tools
@@ -193,6 +213,7 @@ install_boot_tools
 # 4. Python dependencies (firmware fetcher + APK processing)
 # ----------------------------------------------------------------
 log_info "Installing Python dependencies (cloudscraper, requests)"
+err_off
 PIP_FLAGS=""
 python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)" 2>/dev/null \
   && PIP_FLAGS="--break-system-packages" || PIP_FLAGS=""
@@ -200,6 +221,7 @@ pip3 install --quiet $PIP_FLAGS cloudscraper requests 2>/dev/null \
   || pip3 install --quiet cloudscraper requests 2>/dev/null \
   || pip3 install --quiet --user cloudscraper requests 2>/dev/null \
   || log_warn "pip install cloudscraper/requests failed — firmware fetcher may not work"
+err_on
 
 # ----------------------------------------------------------------
 # 5. Final verification report

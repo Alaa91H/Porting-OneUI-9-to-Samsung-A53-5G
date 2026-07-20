@@ -46,8 +46,23 @@ log_debug()   { [[ "$DEBUG" == "1" ]] && _log "$C_MAGENTA" "DEBUG" "$*" || true;
 log_step()    { printf "\n${C_BOLD}${C_BLUE}━━━ %s ━━━${C_RESET}\n" "$*" >&2; }
 die()         { log_error "$*"; exit 1; }
 
-# مصيدة الأخطاء لطباعة السطر الذي فشل
-trap 'die "فشل عند السطر $LINENO في ${FUNCNAME[0]:-main} (exit=$?)"' ERR
+# ERR trap: fires on any command returning non-zero. We guard against
+# firing inside `|| ...` expressions by checking BASH_COMMAND context.
+# When a command is part of an `||` chain, the trap still fires in bash,
+# so we suppress it unless we're at the "top" of command execution.
+_ERR_TRAP_ENABLED=1
+_err_handler() {
+  [[ "$_ERR_TRAP_ENABLED" == "1" ]] || return 0
+  local rc=$?
+  die "Command failed at line $LINENO in ${FUNCNAME[1]:-main} (exit=$rc): $BASH_COMMAND"
+}
+trap '_err_handler' ERR
+
+# Allow functions to run code that may fail without triggering the ERR trap.
+# Usage:
+#   err_off; some_unreliable_command || true; err_on
+err_off() { _ERR_TRAP_ENABLED=0; }
+err_on()  { _ERR_TRAP_ENABLED=1; }
 
 # ============================================================
 # تحميل إعدادات الجهاز
@@ -55,7 +70,10 @@ trap 'die "فشل عند السطر $LINENO في ${FUNCNAME[0]:-main} (exit=$?)"
 # load_env <file.env> [prefix]
 load_env() {
   local file="$1" prefix="${2:-}"
-  [[ -f "$file" ]] || die "ملف الإعدادات غير موجود: $file"
+  if [[ ! -f "$file" ]]; then
+    log_debug "Config file not found (using defaults): $file"
+    return 1
+  fi
   # تحميل آمن: يقبل فقط KEY=VALUE ويتجاهل التعليقات/الأسطر الفارغة
   while IFS='=' read -r key value; do
     key="${key%%#*}"; key="$(echo "$key" | xargs)"
