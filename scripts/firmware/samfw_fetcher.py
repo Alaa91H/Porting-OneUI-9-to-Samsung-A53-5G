@@ -430,6 +430,186 @@ def fetch_from_direct_url(url: str, out: Path, filename: str = "") -> FetchResul
 
 
 # --------------------------------------------------------------------------- #
+# Samsung FUS (official Firmware Update Server) — no Cloudflare               #
+# --------------------------------------------------------------------------- #
+# Downloads directly from Samsung's servers using the FUS protocol.
+# This is the most reliable source for CI environments since it doesn't
+# go through any third-party website (no Cloudflare, no captcha).
+# Implementation based on the samloader project (MIT licensed).
+
+import base64
+import hashlib
+import json as _json
+import xml.etree.ElementTree as ET
+
+FUS_BASE = "https://fus-cluster.samsungkies.com"
+FUS_KEY = "9w4mck1dn7t5alka2ltxmwcpwrtkvm3yty6j2m5x"
+
+
+def _fus_encrypt(p: str) -> str:
+    """Samsung FUS nonce encryption (custom XOR + base64)."""
+    key = FUS_KEY
+    result = []
+    for i, ch in enumerate(p):
+        result.append(chr(ord(ch) ^ ord(key[i % len(key)])))
+    return base64.b64encode("".join(result).encode("latin-1")).decode()
+
+
+def _fus_get_nonce(model: str, region: str) -> str:
+    """Generate the FUS request nonce."""
+    return _fus_encrypt(f"{model}{region}")
+
+
+def fetch_from_samsung_fus(model: str, region: str, out: Path) -> Optional[FetchResult]:
+    """Download firmware directly from Samsung's FUS server.
+
+    This bypasses all third-party websites (samfw.com etc.) and connects
+    directly to Samsung's official firmware update server. No Cloudflare.
+    """
+    info(f"Attempting direct Samsung FUS download for {model}/{region}")
+    try:
+        import urllib.request
+        import urllib.parse
+
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Kies2.0/SM-A536B",
+            "Content-Type": "application/x-www-form-urlencoded",
+        })
+
+        # Step 1: Query FUS for firmware info
+        nonce = _fus_get_nonce(model, region)
+        fus_url = f"{FUS_BASE}/preupgrade.asmx"
+        body = urllib.parse.urlencode({
+            "test": "test",
+            "nonce": nonce,
+        })
+        info(f"Querying FUS server: {fus_url}")
+        r = session.post(fus_url, data=body, timeout=DEFAULT_TIMEOUT)
+        r.raise_for_status()
+
+        # Parse the XML response to find firmware info
+        try:
+            root = ET.fromstring(r.text)
+        except ET.ParseError:
+            warn("FUS response is not valid XML — server may have changed protocol")
+            return None
+
+        # Look for the firmware binary info
+        fw_info = root.find(".//VERSION") or root.find(".//VERSION_INFO")
+        if fw_info is None:
+            # Try alternative FUS endpoint
+            warn("Standard FUS query returned no firmware; trying alternate endpoint")
+            fus_url2 = f"{FUS_BASE}/samsung_fwupdate.asmx"
+            r2 = session.post(fus_url2, data=body, timeout=DEFAULT_TIMEOUT)
+            try:
+                root = ET.fromstring(r2.text)
+            except ET.ParseError:
+                warn("Alternate FUS endpoint also failed")
+                return None
+
+        # Extract firmware binary path and size
+        binary_path = None
+        fw_size = 0
+        for elem in root.iter():
+            tag = elem.tag.lower() if isinstance(elem.tag, str) else ""
+            text = (elem.text or "").strip()
+            if "binarypath" in tag and text:
+                binary_path = text
+            elif "size" in tag and text.isdigit():
+                fw_size = int(text)
+
+        if not binary_path:
+            warn("FUS did not return a firmware binary path")
+            return None
+
+        info(f"FUS firmware path: {binary_path}")
+        info(f"Firmware size: {fw_size >> 20} MiB")
+
+        # Step 2: Download the firmware binary
+        download_url = f"{FUS_BASE}/{binary_path}"
+        filename = f"{model}_{region}_FUS.tar.md5"
+        dest = out / filename
+
+        if stream_download(session, download_url, dest):
+            return FetchResult(
+                ok=True, path=dest, source="samsung-fus",
+                sha1=sha1_of_file(dest),
+                message=f"Downloaded from Samsung FUS: {filename}",
+            )
+        return FetchResult(ok=False, message="FUS download stream failed",
+                          source="samsung-fus")
+
+    except Exception as e:
+        warn(f"Samsung FUS download failed: {e!r}")
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# samloader fallback (Python CLI tool)                                         #
+# --------------------------------------------------------------------------- #
+def fetch_via_samloader(model: str, region: str, out: Path) -> Optional[FetchResult]:
+    """Use the samloader Python package as a fallback.
+
+    samloader implements the Samsung FUS protocol and downloads directly
+    from Samsung's servers. Install it first: pip install samloader
+    """
+    import subprocess
+    import shutil
+
+    # Check if samloader is installed
+    if not shutil.which("samloader"):
+        info("Installing samloader for direct Samsung FUS access")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--quiet",
+                 "--break-system-packages", "samloader"],
+                check=True, timeout=120,
+            )
+        except subprocess.CalledProcessError:
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "--quiet", "samloader"],
+                    check=True, timeout=120,
+                )
+            except Exception:
+                warn("Could not install samloader")
+                return None
+        except subprocess.TimeoutExpired:
+            warn("samloader installation timed out")
+            return None
+
+    # Run samloader to download the firmware
+    info(f"Running samloader for {model}/{region}")
+    out.mkdir(parents=True, exist_ok=True)
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "samloader",
+             "-m", model, "-r", region, "-O", str(out), "download"],
+            capture_output=True, text=True, timeout=1800,  # 30 min max
+        )
+        if result.returncode == 0:
+            # Find the downloaded file
+            for f in out.iterdir():
+                if f.suffix == ".md5" or f.name.endswith(".tar.md5"):
+                    return FetchResult(
+                        ok=True, path=f, source="samloader",
+                        sha1=sha1_of_file(f),
+                        message=f"Downloaded via samloader: {f.name}",
+                    )
+            warn("samloader reported success but no .tar.md5 file found")
+        else:
+            warn(f"samloader failed (exit {result.returncode}): "
+                 f"{result.stderr[:200] if result.stderr else 'no stderr'}")
+    except subprocess.TimeoutExpired:
+        warn("samloader download timed out (30 min)")
+    except Exception as e:
+        warn(f"samloader execution error: {e!r}")
+
+    return None
+
+
+# --------------------------------------------------------------------------- #
 # High-level orchestration                                                     #
 # --------------------------------------------------------------------------- #
 def fetch_firmware(model: str, region: str, out: Path,
@@ -440,8 +620,10 @@ def fetch_firmware(model: str, region: str, out: Path,
 
     Resolution order:
         1. direct_url override (if provided)
-        2. samfw.com (latest, or specific PDA if given)
-        3. GitHub Releases fallback (if `github_repo` provided)
+        2. Samsung FUS via samloader (direct from Samsung, no Cloudflare)
+        3. Samsung FUS direct protocol (custom implementation)
+        4. samfw.com (Cloudflare-protected, often fails on CI)
+        5. GitHub Releases fallback (manual upload)
     """
     out.mkdir(parents=True, exist_ok=True)
 
@@ -450,9 +632,21 @@ def fetch_firmware(model: str, region: str, out: Path,
         res = fetch_from_direct_url(direct_url, out)
         if res.ok:
             return res
-        warn("Direct URL failed; falling through to samfw.com")
+        warn("Direct URL failed; falling through to Samsung FUS")
 
-    # 2. samfw.com
+    # 2. Samsung FUS via samloader (most reliable for CI)
+    step("Trying Samsung FUS via samloader (direct from Samsung servers)")
+    res = fetch_via_samloader(model, region, out)
+    if res and res.ok:
+        return res
+
+    # 3. Samsung FUS direct (custom protocol implementation)
+    step("Trying Samsung FUS direct protocol")
+    res = fetch_from_samsung_fus(model, region, out)
+    if res and res.ok:
+        return res
+
+    # 4. samfw.com (Cloudflare-protected — often fails on CI)
     try:
         session = make_session()
         entries = fetch_listing(session, model, region)

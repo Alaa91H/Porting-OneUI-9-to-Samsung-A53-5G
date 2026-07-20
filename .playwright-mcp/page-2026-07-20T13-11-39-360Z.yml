@@ -1,0 +1,18 @@
+- generic [active] [ref=f50e1]:
+  - main [ref=f50e2]:
+    - generic [ref=f50e3]:
+      - heading "samfw.com" [level=1] [ref=f50e5]
+      - heading "إجراء التحقق من الأمان" [level=2] [ref=f50e6]
+      - paragraph [ref=f50e7]: يستخدم هذا الموقع خدمة أمنية للحماية من برامج الروبوتات الضارة. يتم عرض هذه الصفحة بينما يتحقق موقع الويب من أنك لست روبوتًا.
+  - contentinfo [ref=f50e11]:
+    - generic [ref=f50e13]:
+      - generic [ref=f50e15]:
+        - text: "Ray ID:"
+        - code [ref=f50e16]: a1e233a3693fb44a
+      - generic [ref=f50e17]:
+        - generic [ref=f50e18]:
+          - text: الأداء والأمان من
+          - link "Cloudflare" [ref=f50e19] [cursor=pointer]:
+            - /url: https://www.cloudflare.com?utm_source=challenge&utm_campaign=m
+        - link "الخصوصية" [ref=f50e21] [cursor=pointer]:
+          - /url: https://www.cloudflare.com/privacypolicy/
