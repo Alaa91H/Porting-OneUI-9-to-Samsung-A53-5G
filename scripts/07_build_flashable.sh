@@ -262,7 +262,7 @@ log_info "Validating zip structure"
 if unzip -l "$TWRP_OUT" | grep -q "META-INF/com/google/android/update-binary" \
    && unzip -l "$TWRP_OUT" | grep -q "META-INF/com/google/android/updater-script" \
    && unzip -l "$TWRP_OUT" | grep -q "super.img"; then
-  ok "Zip structure valid (update-binary + updater-script + super.img present)"
+  log_ok "Zip structure valid (update-binary + updater-script + super.img present)"
 else
   die "Zip validation failed — missing required entries"
 fi
@@ -294,4 +294,4 @@ ${C_YELLOW}IMPORTANT:${C_RESET} before flashing:
   4) Wipe data/cache/dalvik after flashing.
 SUMMARY
 
-ok "All packages built successfully."
+log_ok "All packages built successfully."

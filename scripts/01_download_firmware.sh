@@ -22,7 +22,7 @@ load_source_env || true
 load_target_env || true
 err_on
 
-FETCHER="$SCRIPT_DIR/firmware/samfw_fetcher.py"
+FETCHER="$PROJECT_ROOT/scripts/firmware/samfw_fetcher.py"
 [[ -f "$FETCHER" ]] || die "Firmware fetcher not found: $FETCHER"
 command -v python3 >/dev/null 2>&1 || die "python3 is required (run 00_setup.sh)"
 

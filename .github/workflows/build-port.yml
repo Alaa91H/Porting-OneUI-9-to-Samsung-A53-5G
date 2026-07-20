@@ -48,8 +48,8 @@ on:
 
 env:
   DEBLOAT_LEVEL: ${{ github.event.inputs.debloat_level || 'standard' }}
-  KEEP_GAPPS: ${{ github.event.inputs.keep_gapps == false && 'false' || 'true' }}
-  BUILD_KSU: ${{ github.event.inputs.build_ksu == false && 'false' || 'true' }}
+  KEEP_GAPPS: ${{ github.event.inputs.keep_gapps != 'false' && 'true' || 'false' }}
+  BUILD_KSU: ${{ github.event.inputs.build_ksu != 'false' && 'true' || 'false' }}
   SOURCE_PDA: ${{ github.event.inputs.source_pda }}
   TARGET_PDA: ${{ github.event.inputs.target_pda }}
 

@@ -333,4 +333,4 @@ ${C_YELLOW}NOTE:${C_RESET}
   the KernelSU manager APK and use it to patch the kernel on-device.
 SUMMARY
 
-ok "KSU variant built successfully."
+log_ok "KSU variant built successfully."

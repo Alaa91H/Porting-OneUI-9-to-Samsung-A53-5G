@@ -88,23 +88,22 @@ SUPER_OUT="$REPACK_DIR/super.img"
 
 # بناء أمر lpmake ديناميكياً بناءً على الأقسام المتوفرة وحميعها
 LPMAKE_ARGS=(
-  device size:"$SUPER_PARTITION_SIZE"
-  metadata size:65536
-  metadata slots:2
-  group "$GROUP_NAME":"$SUPER_PARTITION_SIZE"
+  --device-size="$SUPER_PARTITION_SIZE"
+  --metadata-size=65536
+  --metadata-slots=2
+  --group="$GROUP_NAME:$SUPER_PARTITION_SIZE"
 )
 
-# أضف أقسام للحجم
 for part in system product system_ext vendor odm vendor_dlkm; do
   img="$REPACK_DIR/${part}.img"
   [[ -f "$img" ]] || continue
   size="$(stat -c%s "$img")"
-  LPMAKE_ARGS+=("partition $part:readonly:${size}:$GROUP_NAME")
-  LPMAKE_ARGS+=("image $part:$img")
+  LPMAKE_ARGS+=("--partition=$part:readonly:${size}:$GROUP_NAME")
+  LPMAKE_ARGS+=("--image=$part=$img")
 done
 
 log_debug "lpmake args: ${LPMAKE_ARGS[*]}"
-lpmake "${LPMAKE_ARGS[@]}" -o "$SUPER_OUT" 2>&1 | tail -20 || die "فشل lpmake"
+lpmake "${LPMAKE_ARGS[@]}" --output="$SUPER_OUT" --sparse 2>&1 | tail -20 || die "lpmake failed"
 
 log_ok "تم بناء super.img: $SUPER_OUT ($(numfmt --to=iec "$(stat -c%s "$SUPER_OUT")" 2>/dev/null))"
 

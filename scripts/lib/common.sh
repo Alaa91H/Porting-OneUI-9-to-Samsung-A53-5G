@@ -6,9 +6,13 @@
 
 set -Eeuo pipefail
 
-# --- مسارات المشروع ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# --- Project paths ---
+# LIB_DIR  = scripts/lib/ (where this file lives)
+# SCRIPT_DIR = scripts/ (the calling script's directory)
+# PROJECT_ROOT = repo root (two levels above LIB_DIR)
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$LIB_DIR/../.." && pwd)"
 CONFIG_DIR="$PROJECT_ROOT/config"
 DEBLOAT_DIR="$PROJECT_ROOT/debloat"
 PATCHES_DIR="$PROJECT_ROOT/patches"
