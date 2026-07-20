@@ -18,6 +18,9 @@ aosp-tools/
 magiskboot/
 mkbootimg/
 
+# Playwright browser snapshots (local only)
+.playwright-mcp/
+
 # ملفات النظام
 .DS_Store
 Thumbs.db
