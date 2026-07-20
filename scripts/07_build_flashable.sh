@@ -1,93 +1,88 @@
 #!/usr/bin/env bash
 # ============================================================
-# 07_build_flashable.sh — بناء الحزم النهائية القابلة للفلاش
-#   1. OneUI9_A53x_Port_Odin.tar.md5  — للفلاش عبر Odin (AP slot)
-#   2. OneUI9_A53x_Port_TWRP.zip      — للفلاش عبر TWRP
-# يتضمّن فحوصات سلامة قبل الإخراج.
+# 07_build_flashable.sh — Build the final unrooted flashable packages
+#   1. OneUI9_a53x_Port_unrooted_<tag>.tar.md5  — Odin (AP slot)
+#   2. OneUI9_a53x_Port_unrooted_<tag>.zip       — TWRP / stock recovery
+#
+# This is the UNROOTED variant (no root, no KSU).
+# For the KSU (KernelSU rooted) variant, run 08_build_ksu.sh next.
 # ============================================================
 set -Eeuo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
-log_step "بناء الحزم النهائية القابلة للفلاش"
+log_step "Building unrooted flashable packages"
 require_tools tar zip md5sum
 load_target_env
 
 REPACK_DIR="$WORK_DIR/repacked"
-[[ -d "$REPACK_DIR" ]] || die "مجلد الحزم غير موجود. شغّل 06_repack.sh أولاً."
+[[ -d "$REPACK_DIR" ]] || die "Repack dir not found. Run 06_repack.sh first."
 
+VARIANT="unrooted"
 VERSION_TAG="$(git_info | tr ' ' '_')"
-ODIN_NAME="OneUI9_${DEVICE_CODENAME}_Port_${VERSION_TAG}.tar.md5"
-TWRP_NAME="OneUI9_${DEVICE_CODENAME}_Port_${VERSION_TAG}.zip"
+ODIN_NAME="OneUI9_${DEVICE_CODENAME}_Port_${VARIANT}_${VERSION_TAG}.tar.md5"
+TWRP_NAME="OneUI9_${DEVICE_CODENAME}_Port_${VARIANT}_${VERSION_TAG}.zip"
 ODIN_OUT="$OUTPUT_DIR/$ODIN_NAME"
 TWRP_OUT="$OUTPUT_DIR/$TWRP_NAME"
 mkdir -p "$OUTPUT_DIR"
 
 # ============================================================
-# 1. فحوصات السلامة قبل الإخراج
+# 1. Pre-output sanity checks
 # ============================================================
-log_step "1/4 — فحوصات السلامة"
-# أ) تأكد وجود الملفات الحيوية
+log_step "1/4 — Sanity checks"
 for f in super.img boot.img; do
-  [[ -f "$REPACK_DIR/$f" ]] || die "ملف أساسي مفقود: $REPACK_DIR/$f"
+  [[ -f "$REPACK_DIR/$f" ]] || die "Critical file missing: $REPACK_DIR/$f"
 done
-log_ok "ملفات أساسية موجودة"
+log_ok "Critical files present"
 
-# ب) فحص سلامة super.img عبر lpdump
+# b) Verify super.img metadata via lpdump
 if command -v lpdump >/dev/null 2>&1; then
   if lpdump "$REPACK_DIR/super.img" >/dev/null 2>&1; then
-    log_ok "super.img: بنية صالحة"
+    log_ok "super.img: valid metadata"
   else
-    die "super.img: بنية تالفة! راجع 06_repack.sh"
+    die "super.img: corrupt metadata! Check 06_repack.sh"
   fi
 fi
 
-# ج) فحص بصمة الجهاز في build.prop
+# c) Verify device fingerprint in build.prop
 PROP_FOUND=0
 for propfile in \
   "$WORK_DIR/port/tgt_system/build.prop" \
   "$WORK_DIR/port/tgt_system/system/build.prop"; do
   if [[ -f "$propfile" ]] && grep -q "ro.product.device=$DEVICE_CODENAME" "$propfile"; then
     PROP_FOUND=1
-    log_ok "بصمة الجهاز صحيحة في $(basename "$propfile"): $DEVICE_CODENAME"
+    log_ok "Device fingerprint OK in $(basename "$propfile"): $DEVICE_CODENAME"
     break
   fi
 done
-[[ "$PROP_FOUND" == "1" ]] || log_warn "لم يُعثر على بصمة الجهاز — تأكد من 05_patch_target.sh"
+[[ "$PROP_FOUND" == "1" ]] || log_warn "Device fingerprint not found — check 05_patch_target.sh"
 
-# د) فحص عدم وجود حزم debloat محذوفة في الصورة (أخذ عيّنة)
+# d) Verify debloat was applied
 if [[ -f "$WORK_DIR/port_status.env" ]] && grep -q "DEBLOAT_REMOVED" "$WORK_DIR/port_status.env"; then
-  log_ok "حذف Debloat مُطبّق"
+  log_ok "Debloat applied"
 fi
 
 # ============================================================
-# 2. بناء حزمة Odin (.tar.md5)
+# 2. Build Odin package (.tar.md5)
 # ============================================================
-log_step "2/4 — بناء حزمة Odin"
-# حزمة Odin: ملفات الأقسام (super.img + boot.img + dtbo + modem إن وُجدت) داخل tar
-# ثم يُلحق توقيع MD5 في النهاية بصيغة سامسونج (32 hex + 2 null bytes padding لكل 4K)
+log_step "2/4 — Building Odin package"
 ODIN_STAGE="$WORK_DIR/odin_stage"
 rm -rf "$ODIN_STAGE"; mkdir -p "$ODIN_STAGE"
 cp "$REPACK_DIR/super.sparse.img" "$ODIN_STAGE/super.img" 2>/dev/null \
   || cp "$REPACK_DIR/super.img" "$ODIN_STAGE/super.img"
 cp "$REPACK_DIR/boot.img" "$ODIN_STAGE/boot.img"
 
-# أضف dtbo و modem إن وُجدت من الهدف
+# Include target partitions if captured
 for part in dtbo modem init_boot vendor_boot; do
   if [[ -f "$WORK_DIR/target_parts/${part}.img" ]]; then
     cp "$WORK_DIR/target_parts/${part}.img" "$ODIN_STAGE/${part}.img"
   fi
 done
-# ملف CSC فارغ للتوافق (Odin يتوقع وجوده أحياناً)
 touch "$ODIN_STAGE/csc.img"
 
-# حساب MD5 بأسلوب سامسونج: توقيع لكل ملف ثم توقيع الحزمة كاملة
-log_info "حساب MD5 وتجميع tar"
+log_info "Computing MD5 and assembling tar"
 cd "$ODIN_STAGE"
-# إنشاء tar بدون ضغط (Odin يقبل .tar.md5)
 tar -cf "$OUTPUT_DIR/$ODIN_NAME.tmp" --format=ustar ./*
-# إلحاق توقيع MD5 الكامل (32 حرف) + padding لأولوية الفلاش عبر Odin
 OVERALL_MD5="$(md5sum "$OUTPUT_DIR/$ODIN_NAME.tmp" | awk '{print $1}')"
-# كتابة التوقيع بصيغة سامسونج: 32 hex + null
 printf '%s' "$OVERALL_MD5" >> "$OUTPUT_DIR/$ODIN_NAME.tmp"
 printf '\0\0' >> "$OUTPUT_DIR/$ODIN_NAME.tmp"
 mv "$OUTPUT_DIR/$ODIN_NAME.tmp" "$ODIN_OUT"

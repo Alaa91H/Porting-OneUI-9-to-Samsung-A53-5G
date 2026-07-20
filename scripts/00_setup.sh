@@ -1,118 +1,239 @@
 #!/usr/bin/env bash
 # ============================================================
-# 00_setup.sh — تثبيت كل الأدوات اللازمة لعملية البورت
-# يعمل على Ubuntu 20.04+ وWSL2 وGitHub Actions (ubuntu-latest).
+# 00_setup.sh — Install all tools required by the porting pipeline
+# Targets: Ubuntu 22.04+ / 24.04 / WSL2 / GitHub Actions runners.
+# All optional downloads use graceful fallback — one missing source
+# does NOT abort the whole setup.
 # ============================================================
 set -Eeuo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
-log_step "تثبيت أدوات البورت"
+log_step "Installing porting toolchain"
 
-# --- 1. حزم النظام ---
-log_info "تحديث فهرس الحزم وتثبيت الاعتماديات الأساسية"
+# ----------------------------------------------------------------
+# Helper: run a command but never let it kill the script
+# ----------------------------------------------------------------
+safe_run() {
+  "$@" || { log_warn "command failed (non-fatal): $*"; return 1; }
+}
+
+# ----------------------------------------------------------------
+# 1. System packages via apt
+# ----------------------------------------------------------------
+log_info "Updating package index and installing core dependencies"
 sudo apt-get update -qq
-sudo apt-get install -y -qq \
-  android-sdk-libsparse android-sdk-platform-tools-common \
+# Install everything we can from apt. Some packages don't exist on
+# older Ubuntu releases — we tolerate failures per-package.
+for pkg in \
+  android-sdk-libsparse \
+  android-sdk-platform-tools-common \
+  android-tools-fsutils \
   simg2img img2simg \
-  e2fsprogs e2fsprogs-ng \
+  e2fsprogs \
   erofs-utils \
   xxd file xz-utils lz4 zstd p7zip-full p7zip-rar \
   wget curl ca-certificates \
-  jq python3 python3-pip \
+  jq python3 python3-pip python3-venv \
   rsync cpio \
-  liblp-dev 2>/dev/null || true
+  liblp-dev \
+  unzip \
+  ; do
+  sudo apt-get install -y -qq "$pkg" 2>/dev/null || log_debug "apt: $pkg not available (skipped)"
+done
 
-# --- 2. أدوات الأقسام الديناميكية (lpunpack/lpmake/lpdump) ---
-# غير متوفرة دائماً في apt، نبنيها من AOSP tools.
+# On Ubuntu 24.04 the "android-tools" meta-package ships lpunpack/lpmake/lpdump
+sudo apt-get install -y -qq android-tools 2>/dev/null && log_ok "android-tools (lpunpack/lpmake/lpdump) from apt" || true
+
+# ----------------------------------------------------------------
+# 2. Dynamic-partition tools: lpunpack / lpmake / lpdump
+#    Priority: apt → prebuilt binary (GitHub release) → pip (lpunpack only)
+# ----------------------------------------------------------------
 install_lp_tools() {
   local dest="/usr/local/bin"
-  if command -v lpunpack >/dev/null 2>&1 && command -v lpmake >/dev/null 2>&1; then
-    log_ok "أدوات liblp (lpunpack/lpmake/lpdump) متوفرة"
+
+  # Already present?
+  local have=0
+  command -v lpunpack >/dev/null 2>&1 && have=1
+  command -v lpmake  >/dev/null 2>&1 && have=1
+  command -v lpdump  >/dev/null 2>&1 && have=1
+  if [[ $have -eq 1 ]]; then
+    log_ok "lp tools already available"
     return 0
   fi
-  log_info "بناء أدوات الأقسام الديناميكية من AOSP"
+
   local build_dir="$WORK_DIR/aosp-tools"
   mkdir -p "$build_dir"
 
-  # نسخة ثابتة من android-tools (تحتوي liblp)
-  if [[ ! -d "$build_dir/android-tools" ]]; then
-    git clone --depth=1 https://github.com/nickcano/android-tools-mirror.git "$build_dir/android-tools" 2>/dev/null \
-      || git clone --depth=1 https://github.com/nickcano/AOSP-mirror.git "$build_dir/android-tools" 2>/dev/null \
-      || true
+  # 2a. Resolve the latest prebuilt binary URL via GitHub API
+  log_info "Resolving lpunpack/lpmake/lpdump prebuilt release"
+  local api_url="https://api.github.com/repos/LonelyFool/lpunpack_and_lpmake_and_lpdump/releases/latest"
+  local dl_urls
+  dl_urls=$(curl -fsSL -H "Accept: application/vnd.github+json" "$api_url" \
+            | jq -r '.assets[].browser_download_url' 2>/dev/null || true)
+
+  if [[ -n "$dl_urls" ]]; then
+    # Pick the first asset (typically a .tar.xz or .zip)
+    local asset_url
+    asset_url=$(echo "$dl_urls" | head -1)
+    log_info "Downloading prebuilt: $asset_url"
+    if curl -fsSL "$asset_url" -o "$build_dir/lp_archive"; then
+      # Extract based on file type
+      if echo "$asset_url" | grep -qiE '\.tar\.xz$'; then
+        tar -xJf "$build_dir/lp_archive" -C "$build_dir" 2>/dev/null || true
+      elif echo "$asset_url" | grep -qiE '\.tar\.gz$'; then
+        tar -xzf "$build_dir/lp_archive" -C "$build_dir" 2>/dev/null || true
+      elif echo "$asset_url" | grep -qiE '\.zip$'; then
+        unzip -o -q "$build_dir/lp_archive" -d "$build_dir" 2>/dev/null || true
+      else
+        # Try tar (generic) then unzip
+        tar -xf "$build_dir/lp_archive" -C "$build_dir" 2>/dev/null \
+          || unzip -o -q "$build_dir/lp_archive" -d "$build_dir" 2>/dev/null || true
+      fi
+      # Find and install the binaries
+      for tool in lpunpack lpmake lpdump; do
+        local found
+        found=$(find "$build_dir" -type f -name "$tool" -executable 2>/dev/null | head -1 || true)
+        if [[ -n "$found" ]]; then
+          sudo install -m755 "$found" "$dest/$tool" 2>/dev/null && log_ok "$tool installed from prebuilt"
+        fi
+      done
+    else
+      log_warn "Prebuilt download failed"
+    fi
+  else
+    log_warn "Could not resolve LonelyFool release assets via API"
   fi
 
-  # بديل: ثنائيات مجمّعة من releases
-  local bin_url="https://github.com/LonelyFool/lpunpack_and_lpmake_and_lpdump/releases/latest/download/lpunpack_and_lpmake_and_lpdump.tar.xz"
-  log_info "تنزيل ثنائيات lpunpack/lpmake/lpdump الجاهزة"
-  if curl -fsSL "$bin_url" -o "$build_dir/lp.tar.xz"; then
-    tar -xf "$build_dir/lp.tar.xz" -C "$build_dir"
-    sudo install -m755 "$build_dir"/lpunpack "$dest"/lpunpack 2>/dev/null || true
-    sudo install -m755 "$build_dir"/lpmake "$dest"/lpmake 2>/dev/null || true
-    sudo install -m755 "$build_dir"/lpdump "$dest"/lpdump 2>/dev/null || true
-  else
-    log_warn "تعذّر تنزيل ثنائيات liblp — راجع README لبنائها يدوياً."
+  # 2b. Fallback: pip-install lpunpack (pure-Python implementation)
+  if ! command -v lpunpack >/dev/null 2>&1; then
+    log_info "Installing lpunpack via pip (pure Python)"
+    pip3 install --quiet lpunpack 2>/dev/null \
+      || pip3 install --quiet --break-system-packages lpunpack 2>/dev/null \
+      || log_warn "pip install lpunpack failed"
   fi
+
+  # 2c. Final report
+  for tool in lpunpack lpmake lpdump; do
+    if command -v "$tool" >/dev/null 2>&1; then
+      log_ok "$tool: $(command -v "$tool")"
+    else
+      log_warn "$tool: NOT installed (needed for super.img operations)"
+    fi
+  done
 }
 install_lp_tools
 
-# --- 3. mkbootimg و unpackbootimg ---
+# ----------------------------------------------------------------
+# 3. Boot image tools: mkbootimg + magiskboot
+# ----------------------------------------------------------------
 install_boot_tools() {
   local dest="/usr/local/bin"
+
+  # 3a. mkbootimg (from AOSP googlesource — pure Python)
   if ! command -v mkbootimg >/dev/null 2>&1; then
-    log_info "تنزيل mkbootimg"
+    log_info "Installing mkbootimg from AOSP"
     local d="$WORK_DIR/mkbootimg"
-    git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg "$d" 2>/dev/null || true
-    [[ -f "$d/mkbootimg.py" ]] && sudo install -m755 "$d/mkbootimg.py" "$dest/mkbootimg"
+    if git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg "$d" 2>/dev/null; then
+      [[ -f "$d/mkbootimg.py" ]] && sudo install -m755 "$d/mkbootimg.py" "$dest/mkbootimg" 2>/dev/null
+    else
+      log_warn "git clone mkbootimg failed"
+    fi
   fi
-  if ! command -v unpackbootimg >/dev/null 2>&1; then
-    log_info "تنزيل magiskboot (لباتش boot.img)"
+
+  # 3b. magiskboot — extract libmagiskboot.so from latest Magisk APK
+  if ! command -v magiskboot >/dev/null 2>&1; then
+    log_info "Installing magiskboot from latest Magisk release"
     local d="$WORK_DIR/magiskboot"
     mkdir -p "$d"
-    local url="https://github.com/topjohnwu/Magisk/releases/latest/download/Magisk.apk"
-    curl -fsSL "$url" -o "$d/Magisk.apk"
-    # magiskboot مدمج داخل الـ apk كأصل lib/x86_64/libmagiskboot.so
-    python3 - "$d/Magisk.apk" "$d" <<'PY'
+
+    # Resolve the actual APK download URL via GitHub API (asset name varies)
+    local apk_url=""
+    apk_url=$(curl -fsSL -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/topjohnwu/Magisk/releases/latest" \
+              | jq -r '.assets[] | select(.name|test("\\.apk$")) | .browser_download_url' 2>/dev/null | head -1 || true)
+
+    if [[ -n "$apk_url" ]] && curl -fsSL "$apk_url" -o "$d/Magisk.apk"; then
+      log_info "Extracting libmagiskboot.so from APK"
+      if python3 - "$d/Magisk.apk" "$d" <<'PY'
 import zipfile, os, sys
 apk, out = sys.argv[1], sys.argv[2]
-z = zipfile.ZipFile(apk)
+try:
+    z = zipfile.ZipFile(apk)
+except Exception as e:
+    print(f"ERROR: cannot open apk: {e}", file=sys.stderr)
+    sys.exit(1)
 for n in z.namelist():
     if 'libmagiskboot' in n and 'x86_64' in n:
         z.extract(n, out)
+        print(f"extracted: {n}", file=sys.stderr)
         break
+else:
+    print("ERROR: libmagiskboot.so (x86_64) not found in apk", file=sys.stderr)
+    sys.exit(1)
 PY
-    local lib; lib="$(ls "$d"/lib/x86_64/libmagiskboot.so 2>/dev/null || true)"
-    [[ -n "$lib" ]] && sudo install -m755 "$lib" "$dest/magiskboot"
+      then
+        local lib
+        lib=$(ls "$d"/lib/x86_64/libmagiskboot.so 2>/dev/null || true)
+        if [[ -n "$lib" ]]; then
+          sudo install -m755 "$lib" "$dest/magiskboot" 2>/dev/null && log_ok "magiskboot installed"
+        else
+          log_warn "libmagiskboot.so not found after extraction"
+        fi
+      else
+        log_warn "Failed to extract magiskboot from APK"
+      fi
+    else
+      log_warn "Could not download Magisk APK (URL: ${apk_url:-<none>})"
+    fi
   fi
 }
 install_boot_tools
 
-# --- 4. Python dependencies for firmware fetcher & APK processing ---
-log_info "Installing Python dependencies"
-# cloudscraper: bypasses Cloudflare challenge on samfw.com / samfreaks.com
-# requests: HTTP client for the firmware fetcher
-PIP_BREAK="--break-system-packages"
+# ----------------------------------------------------------------
+# 4. Python dependencies (firmware fetcher + APK processing)
+# ----------------------------------------------------------------
+log_info "Installing Python dependencies (cloudscraper, requests)"
+PIP_FLAGS=""
 python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)" 2>/dev/null \
-  || PIP_BREAK=""  # older systems don't need the flag
-pip3 install --quiet $PIP_BREAK cloudscraper requests 2>/dev/null \
+  && PIP_FLAGS="--break-system-packages" || PIP_FLAGS=""
+pip3 install --quiet $PIP_FLAGS cloudscraper requests 2>/dev/null \
   || pip3 install --quiet cloudscraper requests 2>/dev/null \
-  || { log_warn "pip install failed — firmware fetcher will need manual install of cloudscraper"; }
+  || pip3 install --quiet --user cloudscraper requests 2>/dev/null \
+  || log_warn "pip install cloudscraper/requests failed — firmware fetcher may not work"
 
-# --- 5. Final verification ---
+# ----------------------------------------------------------------
+# 5. Final verification report
+# ----------------------------------------------------------------
 log_step "Verifying installed tools"
-tools=(simg2img img2simg mkfs.erofs dump.erofs file xxd jq rsync wget curl)
-for t in "${tools[@]}"; do
-  if command -v "$t" >/dev/null 2>&1; then log_ok "$t"; else log_warn "missing: $t"; fi
+critical=(simg2img img2simg mkfs.erofs dump.erofs file xxd jq rsync curl unzip)
+optional=(lpunpack lpmake lpdump mkbootimg magiskboot)
+missing_critical=0
+
+for t in "${critical[@]}"; do
+  if command -v "$t" >/dev/null 2>&1; then
+    log_ok "$t"
+  else
+    log_error "missing critical: $t"
+    missing_critical=1
+  fi
 done
-for t in lpunpack lpmake lpdump mkbootimg magiskboot; do
-  if command -v "$t" >/dev/null 2>&1; then log_ok "$t"; else log_warn "missing: $t (may need manual build)"; fi
+for t in "${optional[@]}"; do
+  if command -v "$t" >/dev/null 2>&1; then
+    log_ok "$t"
+  else
+    log_warn "missing optional: $t (may need manual build)"
+  fi
 done
 
-# Verify Python firmware-fetcher dependencies
-log_step "Verifying Python firmware fetcher dependencies"
+log_step "Verifying Python firmware fetcher"
 if python3 -c "import requests, cloudscraper" 2>/dev/null; then
   log_ok "Python firmware fetcher ready"
 else
   log_warn "cloudscraper/requests not importable — run: pip install cloudscraper requests"
+fi
+
+if [[ "$missing_critical" -ne 0 ]]; then
+  die "One or more CRITICAL tools are missing. Fix the above errors before continuing."
 fi
 
 log_ok "Setup complete. Next: bash scripts/01_download_firmware.sh"

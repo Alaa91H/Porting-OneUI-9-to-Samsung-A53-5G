@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: true
+      build_ksu:
+        description: 'Also build KernelSU variant'
+        required: false
+        type: boolean
+        default: true
       source_pda:
         description: 'Specific source PDA (optional)'
         required: false
@@ -43,7 +48,8 @@ on:
 
 env:
   DEBLOAT_LEVEL: ${{ github.event.inputs.debloat_level || 'standard' }}
-  KEEP_GAPPS: ${{ github.event.inputs.keep_gapps && 'true' || 'true' }}
+  KEEP_GAPPS: ${{ github.event.inputs.keep_gapps == false && 'false' || 'true' }}
+  BUILD_KSU: ${{ github.event.inputs.build_ksu == false && 'false' || 'true' }}
   SOURCE_PDA: ${{ github.event.inputs.source_pda }}
   TARGET_PDA: ${{ github.event.inputs.target_pda }}
 
@@ -56,7 +62,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Free up disk space
         run: |
@@ -80,7 +86,7 @@ jobs:
 
       - name: Restore firmware cache
         if: ${{ github.event.inputs.skip_download == 'true' }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             downloads/
@@ -97,8 +103,8 @@ jobs:
         run: bash scripts/01_download_firmware.sh
 
       - name: Save firmware cache
-        if: always()
-        uses: actions/cache/save@v4
+        if: always() && hashFiles('downloads/*') != ''
+        uses: actions/cache/save@v5
         with:
           path: |
             downloads/
@@ -119,16 +125,21 @@ jobs:
       - name: Repack images (06)
         run: sudo -E bash scripts/06_repack.sh
 
-      - name: Build flashable packages (07)
+      - name: Build unrooted packages (07)
         run: sudo -E bash scripts/07_build_flashable.sh
 
+      - name: Build KSU variant (08)
+        if: ${{ env.BUILD_KSU == 'true' }}
+        run: sudo -E bash scripts/08_build_ksu.sh
+
       - name: Upload build artefacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: OneUI9_A53x_Port_${{ github.run_number }}
           path: |
             output/*.tar.md5
             output/*.zip
+            output/*.apk
             work/port_status.env
             work/*_fetch.json
           retention-days: 14
@@ -148,23 +159,32 @@ jobs:
             |---|---|
             | Debloat level | `${{ env.DEBLOAT_LEVEL }}` |
             | Keep GApps | `${{ github.event.inputs.keep_gapps }}` |
+            | KSU variant | `${{ env.BUILD_KSU }}` |
             | Source PDA | `${{ github.event.inputs.source_pda || 'latest' }}` |
             | Target PDA | `${{ github.event.inputs.target_pda || 'latest' }}` |
             | Build run | `${{ github.run_id }}` |
 
-            ### Flashing
+            ### Variants
 
-            1. Enable **OEM Unlock** in Developer Options and unlock the bootloader.
-            2. *(If modem/vendor are not bundled)* flash the matching target
-               `CP` and `vendor`/`system` from the original A53 firmware first.
-            3. Flash the `.zip` via TWRP / OrangeFox / stock recovery, **or** the
-               `.tar.md5` via Odin (AP slot).
-            4. Wipe data / cache / dalvik after flashing.
+            **Unrooted** (no root):
+            - `OneUI9_a53x_Port_unrooted_*.tar.md5` — Odin (AP slot)
+            - `OneUI9_a53x_Port_unrooted_*.zip` — TWRP / stock recovery
+
+            **KernelSU** (rooted):
+            - `OneUI9_a53x_Port_KSU_*.zip` — TWRP (boot may be pre-patched)
+            - `KernelSU_manager_*.apk` — install after boot if kernel needs on-device patching
+
+            ### Flashing
+            1. Enable **OEM Unlock** and unlock the bootloader.
+            2. Flash the unrooted or KSU zip via TWRP, or the `.tar.md5` via Odin.
+            3. Wipe data / cache / dalvik after flashing.
+            4. For KSU: install the manager APK after first boot if needed.
 
             > ⚠️ Use at your own risk. May void warranty / trip Knox.
           files: |
             output/*.tar.md5
             output/*.zip
+            output/*.apk
           prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
